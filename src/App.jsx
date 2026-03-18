@@ -645,6 +645,32 @@ const VBMCalculator = ({ onBack }) => {
 // ============================================================
 const DEFAULT_FX = 1450;
 const VSM_TEXT = {
+  EN: {
+    title: "VSM Pricing Simulator",
+    subtitle: "True Cost of DIY vs. VSM Efficiency",
+    tripConfig: "Trip Configuration",
+    mode: { buyer: "Buyer Travel to Supplier", supplier: "Supplier Visit to Buyer", virtual: "Virtual Sourcing" },
+    labels: {
+      travelMode: "Travel Mode", distance: "Distance Band", travelers: "Travelers", rank: "Avg. Rank",
+      days: "Trip Days", prepDays: "Prep & Follow-up (Days)", meetings: "Expected Mtgs",
+      airfare: "Airfare", hotel: "Hotel/Night", labor: "Labor/Day (Rank Based)", subsidy: "Subsidy (Manual)",
+      netCost: "Cash Cost (Air/Hotel)", effectiveCost: "True Risk-Adj. Cost",
+      totalDiy: "Total Estimated DIY Cost", diyCost: "DIY Cost/Meeting", effPremium: "Efficiency Premium",
+      copy: "Copy Cost Analysis", copied: "Analysis copied!", package: "VSM Package Proposal", bundle: "3-Mtg Bundle",
+      retainer: "Annual Retainer", blended: "Blended", perMtg: "per meeting", narrative: "Client Proposal",
+      hiddenCost: "Risk Opportunity Cost", basicCost: "Internal Labor & Overhead", visibleCost: "Visible Trip Expenses",
+      print: "Print / PDF", smartPrice: "Smart Pricing Applied", smartReason: "Capped at 90% of Risk-Adj Cost",
+      vsmPriceLabel: "VSM Per Meeting Price", compareDiy: "vs. DIY Cost",
+      diySuccessProb: "DIY Success Probability"
+    },
+    presets: { sea: "SEA Short Trip", japan: "Japan 2D1N", eu: "EU Strategic", us: "US Expansion" },
+    narrative: {
+      base: "Directly sourcing this item costs {total} when factoring in labor and risk (success rate {rate}%). VSM offers a verified match guarantee at a fraction of this hidden cost.",
+      ceilingWarning: "High DIY Cost Alert: The opportunity cost of failure here is significant. VSM acts as insurance against this risk."
+    },
+    roiSection: "Success Probability & Risk",
+    diySection: "Expense Inputs"
+  },
   KR: {
     title: "VSM 가치/비용 시뮬레이터",
     subtitle: "직접 수행(DIY) 시 발생하는 실제 비용 및 리스크 분석",
@@ -720,8 +746,8 @@ const VSMCalculator = ({ onBack }) => {
   const [tier, setTier] = useState(VSM_TIERS.T2);
   const [fx, setFx] = useState(DEFAULT_FX);
   const [mode, setMode] = useState('BuyerTravel');
-  const [premiumMode] = useState('Hybrid');
-  const lang = 'KR';
+  const [premiumMode, setPremiumMode] = useState('Hybrid');
+  const [lang, setLang] = useState('KR');
   const t = VSM_TEXT[lang];
 
   const [travelers, setTravelers] = useState(2);
@@ -730,8 +756,8 @@ const VSMCalculator = ({ onBack }) => {
   const [prepDays, setPrepDays] = useState(2);
   const [expectedMeetings, setExpectedMeetings] = useState(1);
   const [distanceFactor, setDistanceFactor] = useState(DISTANCE_FACTORS[1]);
-  const [costLevel] = useState(COST_LEVELS[1]);
-  const [complexity] = useState(1.0);
+  const [costLevel, setCostLevel] = useState(COST_LEVELS[1]);
+  const [complexity, setComplexity] = useState(1.0);
   const [diySuccessProb, setDiySuccessProb] = useState(0.5);
 
   const [manualAir, setManualAir] = useState(0);
@@ -739,6 +765,7 @@ const VSMCalculator = ({ onBack }) => {
   const [manualMeals, setManualMeals] = useState(0);
   const [manualLabor, setManualLabor] = useState(0);
   const [subsidyManual, setSubsidyManual] = useState(0);
+  const [subsidies, setSubsidies] = useState({ expo: false, air: false, hotel: false });
 
   useEffect(() => { setManualLabor(rank.cost); }, [rank]);
 
@@ -770,7 +797,10 @@ const VSMCalculator = ({ onBack }) => {
     const baseTake = (rawTripCost + laborCost) * tier.takeRate;
     const premiumPercent = baseTake * tier.premiumPct * complexity;
     const premiumFixed = tier.fixedPremium * complexity;
-    const premium = Math.max(premiumPercent, premiumFixed);
+    let premium = 0;
+    if (premiumMode === 'Percent') premium = premiumPercent;
+    else if (premiumMode === 'Fixed') premium = premiumFixed;
+    else premium = Math.max(premiumPercent, premiumFixed);
     let computedPrice = baseTake + premium;
     if (computedPrice < tier.floor) computedPrice = tier.floor;
 
@@ -780,17 +810,24 @@ const VSMCalculator = ({ onBack }) => {
     let ceilingExceeded = false;
     if (computedPrice > tier.ceiling) ceilingExceeded = true;
 
+    let subsidyVal = subsidyManual;
+    if (subsidies.air && !isVirtual) subsidyVal += estAir * travelers;
+    if (subsidies.hotel && !isVirtual) subsidyVal += estHotel * travelers * nights;
+
+    const diyPerMeeting = totalTrueCost / Math.max(1, expectedMeetings);
+
     const bundlePrice = 3 * computedPrice * (1 - tier.discount);
     const retainerVal = tier.retainerQuota * computedPrice * (1 + tier.retainerPremium);
 
     return {
-      diy: { cash: rawTripCost, labor: laborCost, riskOppty: riskOpptyCost, totalTrue: totalTrueCost, totalDays: totalDaysInvolved },
+      diy: { cash: rawTripCost, labor: laborCost, riskOppty: riskOpptyCost, totalTrue: totalTrueCost, totalDays: totalDaysInvolved, perMeeting: diyPerMeeting, subsidy: subsidyVal },
       vsm: { price: computedPrice, isSmartPricing, ceilingExceeded, bundle: bundlePrice, retainer: retainerVal }
     };
-  }, [mode, travelers, days, prepDays, expectedMeetings, distanceFactor, costLevel, complexity, manualAir, manualHotel, manualMeals, manualLabor, subsidyManual, tier, premiumMode, fx, diySuccessProb]);
+  }, [mode, travelers, days, prepDays, expectedMeetings, distanceFactor, costLevel, complexity, manualAir, manualHotel, manualMeals, manualLabor, subsidyManual, subsidies, tier, premiumMode, fx, diySuccessProb]);
 
   const applyPreset = (p) => {
     setDistanceFactor(DISTANCE_FACTORS[p.distanceIdx]);
+    setCostLevel(COST_LEVELS[p.costIdx]);
     setTravelers(p.travelers);
     setExpectedMeetings(p.meetings);
     setDays(DISTANCE_FACTORS[p.distanceIdx].days);
@@ -840,6 +877,9 @@ const VSMCalculator = ({ onBack }) => {
               <input type="text" value={fx.toLocaleString()} onChange={(e) => handleNumberChange(e, setFx)}
                 className="w-20 bg-transparent text-xs font-extrabold focus:outline-none text-right text-slate-800" />
             </div>
+            <button onClick={() => setLang(l => l === 'EN' ? 'KR' : 'EN')} className="px-4 py-1.5 bg-blue-800 text-white rounded-lg text-xs font-bold flex items-center gap-1">
+              <Globe size={14} /> {lang}
+            </button>
             <button onClick={() => window.print()} className="px-4 py-1.5 bg-slate-800 text-white rounded-lg text-xs font-bold flex items-center gap-1">
               <Printer size={14} /> {t.labels.print}
             </button>
@@ -856,7 +896,7 @@ const VSMCalculator = ({ onBack }) => {
                   {['quick', 'advanced'].map(tabKey => (
                     <button key={tabKey} onClick={() => setActiveTab(tabKey)}
                       className={`px-3 py-1 rounded-md text-xs font-bold capitalize transition-all ${activeTab === tabKey ? 'bg-white text-blue-700 shadow-sm border border-slate-200' : 'text-slate-500'}`}>
-                      {tabKey === 'quick' ? '간편설정' : '상세설정'}
+                      {tabKey === 'quick' ? (lang === 'KR' ? '간편설정' : 'Quick') : (lang === 'KR' ? '상세설정' : 'Advanced')}
                     </button>
                   ))}
                 </div>
@@ -890,12 +930,31 @@ const VSMCalculator = ({ onBack }) => {
                       </select>
                     </div>
                   </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-700">{lang === 'KR' ? '물가 수준' : 'Cost Level'}</label>
+                      <select className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white"
+                        value={COST_LEVELS.indexOf(costLevel)} onChange={e => setCostLevel(COST_LEVELS[e.target.value])}>
+                        {COST_LEVELS.map((c, i) => <option key={i} value={i}>{c.label}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-700">{lang === 'KR' ? '복잡도 가중치' : 'Complexity'}</label>
+                      <select className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white"
+                        value={complexity} onChange={e => setComplexity(Number(e.target.value))}>
+                        <option value={0.8}>Low (0.8×)</option>
+                        <option value={1.0}>Standard (1.0×)</option>
+                        <option value={1.2}>High (1.2×)</option>
+                        <option value={1.5}>Very High (1.5×)</option>
+                      </select>
+                    </div>
+                  </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label className="text-xs font-bold text-slate-700">{t.labels.rank}</label>
                       <select className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white"
                         value={rank.id} onChange={e => setRank(Object.values(VSM_RANKS).find(r => r.id === e.target.value))}>
-                        {Object.values(VSM_RANKS).map(r => <option key={r.id} value={r.id}>{r.labelKR}</option>)}
+                        {Object.values(VSM_RANKS).map(r => <option key={r.id} value={r.id}>{lang === 'KR' ? r.labelKR : r.id}</option>)}
                       </select>
                     </div>
                     <div className="space-y-1">
@@ -933,7 +992,7 @@ const VSMCalculator = ({ onBack }) => {
                   <span className="text-sm font-mono bg-white border border-indigo-300 px-3 py-1 rounded text-indigo-800 font-extrabold">{Math.round(diySuccessProb * 100)}%</span>
                 </div>
                 <input type="range" min="0.1" max="1" step="0.1" value={diySuccessProb} onChange={e => setDiySuccessProb(Number(e.target.value))} className="w-full h-2 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-indigo-700" />
-                <p className="text-xs text-slate-600 mt-2 leading-relaxed font-medium">직접 출장 갔을 때, 원하는 퀄리티의 공급사를 계약까지 성사시킬 확률입니다.</p>
+                <p className="text-xs text-slate-600 mt-2 leading-relaxed font-medium">{lang === 'KR' ? '직접 출장 갔을 때, 원하는 퀄리티의 공급사를 계약까지 성사시킬 확률입니다. 50%라면, 성공 1건을 위해 평균 2번의 출장 비용이 소모됩니다.' : 'Probability of successfully contracting a supplier on a single DIY trip. 50% means you need 2 trips on average for 1 success.'}</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-4 rounded-xl bg-slate-50 border border-slate-300">
@@ -972,6 +1031,24 @@ const VSMCalculator = ({ onBack }) => {
                   </div>
                 ))}
               </div>
+              <p className="text-[11px] text-slate-500 mt-4 text-right italic font-medium">
+                * {lang === 'KR' ? '인건비 = 일일 기회비용 × 인원 × (출장일 + 준비/팔로업일)' : 'Labor = Daily Rate × Travelers × (Trip + Prep Days)'}
+              </p>
+              <div className="mt-4 pt-4 border-t border-slate-200">
+                <div className="text-xs font-bold text-slate-600 mb-3">{lang === 'KR' ? '정부 지원금/보조금 적용' : 'Government Subsidies'}</div>
+                <div className="flex flex-wrap gap-3">
+                  {[
+                    { key: 'air', label: lang === 'KR' ? '항공 보조' : 'Airfare Subsidy' },
+                    { key: 'hotel', label: lang === 'KR' ? '숙박 보조' : 'Hotel Subsidy' },
+                    { key: 'expo', label: lang === 'KR' ? '전시회 지원' : 'Expo Support' },
+                  ].map(s => (
+                    <label key={s.key} className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-100">
+                      <input type="checkbox" checked={subsidies[s.key]} onChange={e => setSubsidies(prev => ({ ...prev, [s.key]: e.target.checked }))} className="w-3.5 h-3.5 accent-blue-600" />
+                      <span className="text-xs font-bold text-slate-700">{s.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
             </section>
           </div>
 
@@ -1002,6 +1079,14 @@ const VSMCalculator = ({ onBack }) => {
                 </div>
                 <div className="text-2xl font-extrabold text-white">{fmtKRW(results.vsm.bundle)}</div>
                 <div className="text-xs text-slate-300 font-medium">{fmtKRW(results.vsm.bundle / 3)} {t.labels.perMtg}</div>
+              </div>
+              <div className="space-y-3 relative border-t border-slate-600/50 pt-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-bold text-slate-200">{t.labels.retainer}</span>
+                  <span className="text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded-full font-extrabold">{tier.retainerQuota}{lang === 'KR' ? '회' : ' mtgs'}</span>
+                </div>
+                <div className="text-2xl font-extrabold text-white">{fmtKRW(results.vsm.retainer)}</div>
+                <div className="text-xs text-slate-300 font-medium">{fmtKRW(results.vsm.retainer / tier.retainerQuota)} {t.labels.perMtg} ({t.labels.blended})</div>
               </div>
               <div className="relative pt-2 no-print">
                 <button onClick={copyProposal} className="w-full font-bold py-3.5 rounded-xl transition-all flex items-center justify-center gap-2 active:scale-95 shadow-lg bg-blue-600 text-white hover:bg-blue-500 border border-blue-500">
@@ -1040,12 +1125,23 @@ const VSMCalculator = ({ onBack }) => {
               <p className="text-sm leading-relaxed italic text-slate-800 font-medium">
                 "{t.narrative.base.replace('{rate}', Math.round(diySuccessProb * 100)).replace('{total}', fmtKRW(results.diy.totalTrue))}"
               </p>
+              {results.vsm.ceilingExceeded && (
+                <div className="flex items-start gap-2 p-3 bg-red-100 border border-red-300 rounded-lg">
+                  <AlertCircle size={16} className="text-red-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-800 font-bold leading-relaxed">{t.narrative.ceilingWarning}</p>
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2 pt-2">
+                <span className="text-[10px] px-2 py-1 rounded border bg-white text-slate-700 border-slate-300 font-bold shadow-sm">Risk Mitigation</span>
+                <span className="text-[10px] px-2 py-1 rounded border bg-white text-slate-700 border-slate-300 font-bold shadow-sm">Cost Saving</span>
+                {results.vsm.ceilingExceeded && <span className="text-[10px] px-2 py-1 rounded border bg-red-100 text-red-700 border-red-300 font-bold shadow-sm">High Risk Alert</span>}
+              </div>
             </div>
           </div>
         </div>
 
         <footer className="pt-8 pb-12 text-center border-t border-slate-300 mt-6">
-          <p className="text-xs font-bold text-slate-700">본 시뮬레이터는 법제처 공무원 여비 규정, aT 수출종합지원시스템, KOTRA 해외전시회 규정을 준수하여 산출되었습니다.</p>
+          <p className="text-xs font-bold text-slate-700">{lang === 'KR' ? '본 시뮬레이터는 법제처 공무원 여비 규정, aT 수출종합지원시스템, KOTRA 해외전시회 규정을 준수하여 산출되었습니다.' : 'Calculations comply with government travel regulations, aT Buyer Invitation Support standards, and KOTRA Overseas Exhibition Support guidelines.'}</p>
           <p className="text-xs text-slate-400 mt-2">Internal Use Only · Copyright © 2026 Tridge. All Rights Reserved.</p>
         </footer>
       </div>
@@ -1199,8 +1295,24 @@ const SuccessFeeCalculator = ({ onBack }) => {
     setUnit(newUnit);
     const factor = newUnit === 'MT' ? 1000 : 0.001;
     const volFactor = newUnit === 'MT' ? 0.001 : 1000;
-    setStdInputs(prev => ({ ...prev, myPrice: parseFloat((prev.myPrice * factor).toFixed(2)), mktPrice: parseFloat((prev.mktPrice * factor).toFixed(2)), volume: prev.volume * volFactor }));
-    setAdvInputs(prev => ({ ...prev, myPrice: parseFloat((prev.myPrice * factor).toFixed(2)), mktPrice: parseFloat((prev.mktPrice * factor).toFixed(2)), volume: prev.volume * volFactor }));
+    setStdInputs(prev => ({
+      ...prev,
+      myPrice: parseFloat((prev.myPrice * factor).toFixed(2)),
+      mktPrice: parseFloat((prev.mktPrice * factor).toFixed(2)),
+      baseMyPrice: parseFloat((prev.baseMyPrice * factor).toFixed(2)),
+      baseMktPrice: parseFloat((prev.baseMktPrice * factor).toFixed(2)),
+      volume: prev.volume * volFactor
+    }));
+    setAdvInputs(prev => ({
+      ...prev,
+      baseMean: parseFloat((prev.baseMean * factor).toFixed(2)),
+      baseStd: parseFloat((prev.baseStd * factor).toFixed(2)),
+      baseMyPrice: parseFloat((prev.baseMyPrice * factor).toFixed(2)),
+      evalMean: parseFloat((prev.evalMean * factor).toFixed(2)),
+      evalStd: parseFloat((prev.evalStd * factor).toFixed(2)),
+      evalMyPrice: parseFloat((prev.evalMyPrice * factor).toFixed(2)),
+      volume: prev.volume * volFactor
+    }));
   };
 
   const handleFileUpload = (e) => {
@@ -1259,7 +1371,7 @@ const SuccessFeeCalculator = ({ onBack }) => {
     const factor = unit === 'MT' ? 1000 : 1; const volFactor = unit === 'MT' ? 0.001 : 1;
     const common = { volume: Math.round(targetEval.vol * volFactor) };
     setStdInputs({ myPrice: parseFloat((tEval * factor).toFixed(2)), mktPrice: parseFloat((mEval * factor).toFixed(2)), baseMyPrice: parseFloat((tBase * factor).toFixed(2)), baseMktPrice: parseFloat((mBase * factor).toFixed(2)), ...common });
-    setAdvInputs({ baseMean: parseFloat((mBase * factor).toFixed(2)), baseStd: parseFloat(sBase.toFixed(4)), baseMyPrice: parseFloat((tBase * factor).toFixed(2)), evalMean: parseFloat((mEval * factor).toFixed(2)), evalStd: parseFloat(sEval.toFixed(4)), evalMyPrice: parseFloat((tEval * factor).toFixed(2)), ...common });
+    setAdvInputs({ baseMean: parseFloat((mBase * factor).toFixed(2)), baseStd: parseFloat((sBase * factor).toFixed(2)), baseMyPrice: parseFloat((tBase * factor).toFixed(2)), evalMean: parseFloat((mEval * factor).toFixed(2)), evalStd: parseFloat((sEval * factor).toFixed(2)), evalMyPrice: parseFloat((tEval * factor).toFixed(2)), ...common });
   }, [selectedImporter, baseYear, evalYear, excelData, unit]);
 
   return (
