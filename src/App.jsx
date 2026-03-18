@@ -1150,10 +1150,45 @@ const VSMCalculator = ({ onBack }) => {
 };
 
 // ============================================================
-// CALCULATOR 3: 성공보수 분석기 (원본 App.js)
+// CALCULATOR 3: 성공보수 분석기 — DATASETS
+// ============================================================
+const CUSTOMER_TYPES = {
+  A: { title: "완제품 수입 유통사", desc: "제조 X / 직접 수입 O (완제품)", icon: 'container', color: "blue" },
+  B: { title: "원료 수입 유통사", desc: "제조 X / 직접 수입 O (원료/소재)", icon: 'trending', color: "green" },
+  C: { title: "외자 구매 제조사", desc: "제조 O / 직접 수입 O (핵심 원료)", icon: 'factory', color: "purple" },
+  D: { title: "내자 구매 제조사", desc: "제조 O / 직접 수입 X (국내 구매)", icon: 'building', color: "orange" },
+  E: { title: "브랜드 오너 (OEM)", desc: "제조 X / 간접 수입 (기획 집중)", icon: 'cart', color: "indigo" },
+  Retail: { title: "리테일 (유통 채널)", desc: "대형마트, 이커머스 (쿠팡, 컬리 등)", icon: 'store', color: "red" },
+};
+
+const SF_OBJECTIVES = [
+  { id: 'cost', title: '원가 절감 (Cost Saving)', desc: '기존 대비 저렴한 대체 공급사 발굴', req: { factors: ['newSourcing'], scope: 'standard', eye: false, csv: 5 } },
+  { id: 'risk', title: '공급망 리스크 관리', desc: '시세 변동 모니터링 및 수급 안정화', req: { factors: ['priceTracking'], scope: 'standard', eye: true, csv: 8 } },
+  { id: 'competitor', title: '경쟁사 벤치마킹', desc: '경쟁사의 수입 물량, 단가, 거래선 분석', req: { factors: ['competitor'], scope: 'unlimited', eye: false, csv: 15 } },
+  { id: 'export', title: '해외 판로 개척 (Export)', desc: '데이터 기반 글로벌 진성 바이어 발굴', req: { factors: ['newSourcing', 'competitor'], scope: 'unlimited', eye: false, csv: 20 } },
+  { id: 'npd', title: '신제품/트렌드 (NPD)', desc: '가공식품 트렌드 및 유망 아이템 발굴', req: { factors: [], scope: 'unlimited', eye: true, csv: 24 } },
+];
+
+// ============================================================
+// CALCULATOR 3: 성공보수 분석기 (3-Step)
 // ============================================================
 const SuccessFeeCalculator = ({ onBack }) => {
-  const [mainTab, setMainTab] = useState('setup');
+  // === Step Navigation ===
+  const [currentStep, setCurrentStep] = useState('quote'); // 'quote' | 'modeling' | 'verification'
+
+  // === Step 1: Quote State ===
+  const [selectedType, setSelectedType] = useState(null);
+  const [quizStep, setQuizStep] = useState('Q1');
+  const [selectedObjectives, setSelectedObjectives] = useState([]);
+  const [valueFactors, setValueFactors] = useState({ competitor: false, priceTracking: false, newSourcing: false, marketDominance: false });
+  const [sfSolution, setSfSolution] = useState({ te: true, eye: false });
+  const [sfScope, setSfScope] = useState('standard');
+  const [sfUsers, setSfUsers] = useState(1);
+  const [csvSliderValue, setCsvSliderValue] = useState(5);
+  const [sfDuration, setSfDuration] = useState(1);
+  const [showPrice, setShowPrice] = useState(false);
+
+  // === Step 2 & 3: Shared State ===
   const [isStrategyExpanded, setIsStrategyExpanded] = useState(true);
   const [isAiStrategyOpen, setIsAiStrategyOpen] = useState(true);
   const [isAiProposalOpen, setIsAiProposalOpen] = useState(true);
@@ -1240,6 +1275,80 @@ const SuccessFeeCalculator = ({ onBack }) => {
   const [advInputs, setAdvInputs] = useState({ baseMean: 5.00, baseStd: 0.40, baseMyPrice: 5.00, evalMean: 4.50, evalStd: 0.40, evalMyPrice: 4.20, volume: 50000 });
 
   const fmtUSD = (num) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(num);
+
+  // === Step 1: Quote Pricing Logic ===
+  useEffect(() => {
+    if (selectedObjectives.length === 0) return;
+    let nf = { competitor: false, priceTracking: false, newSourcing: false, marketDominance: false };
+    let ns = 'standard'; let ne = false; let mc = 5;
+    selectedObjectives.forEach(objId => {
+      const rule = SF_OBJECTIVES.find(o => o.id === objId).req;
+      rule.factors.forEach(f => nf[f] = true);
+      if (rule.scope === 'unlimited') ns = 'unlimited';
+      if (rule.eye) ne = true;
+      if (rule.csv > mc) mc = rule.csv;
+    });
+    setValueFactors(nf); setSfScope(ns);
+    setSfSolution(prev => ({ ...prev, eye: ne }));
+    setCsvSliderValue(mc); setShowPrice(false);
+  }, [selectedObjectives]);
+
+  const getCsvQuota = (val) => val <= 10 ? val * 1000 : 10000 + ((val - 10) * 10000);
+  const currentQuotaDisplay = getCsvQuota(csvSliderValue);
+
+  const calculateBasePrice = () => {
+    let total = 5000;
+    if (sfSolution.eye) total += 10000;
+    if (sfScope === 'standard') total += 2000;
+    if (sfScope === 'unlimited') total += 5000;
+    if (valueFactors.competitor) total += 5000;
+    if (valueFactors.priceTracking) total += 3000;
+    if (valueFactors.marketDominance) total += 5000;
+    if (valueFactors.newSourcing) total += 2000;
+    if (currentQuotaDisplay <= 10000) { total += (currentQuotaDisplay / 1000) * 1200; }
+    else { total += 12000; total += ((currentQuotaDisplay - 10000) / 10000) * 1500; }
+    if (sfUsers > 1) total += (sfUsers - 1) * 1000;
+    return Math.round(total);
+  };
+
+  const annualPrice = calculateBasePrice();
+  const calculateTotalContractValue = () => {
+    if (sfDuration === 1) return annualPrice;
+    if (sfDuration === 2) return annualPrice * 1.8;
+    if (sfDuration === 3) return annualPrice * 2.5;
+    return annualPrice;
+  };
+  const totalContractValue = Math.round(calculateTotalContractValue());
+
+  const handleQuizAnswer = (answer) => {
+    switch(quizStep) {
+      case 'Q1': if (answer === 'yes') selectFinalType('Retail'); else setQuizStep('Q2'); break;
+      case 'Q2': if (answer === 'yes') setQuizStep('Q3_Mfg'); else setQuizStep('Q3_Dist'); break;
+      case 'Q3_Mfg': if (answer === 'yes') selectFinalType('C'); else selectFinalType('D'); break;
+      case 'Q3_Dist': if (answer === 'yes') setQuizStep('Q4_Type'); else selectFinalType('E'); break;
+      case 'Q4_Type': if (answer === 'finished') selectFinalType('A'); else selectFinalType('B'); break;
+      default: break;
+    }
+  };
+  const selectFinalType = (key) => {
+    setSelectedType(key); setQuizStep('Q1');
+    setSelectedObjectives([]);
+    setValueFactors({ competitor: false, priceTracking: false, newSourcing: false, marketDominance: false });
+    setSfScope('standard'); setSfSolution({ te: true, eye: false });
+  };
+  const resetQuoteAnalysis = () => { setSelectedType(null); setQuizStep('Q1'); setSelectedObjectives([]); setShowPrice(false); };
+  const toggleObjective = (id) => {
+    setSelectedObjectives(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+  const renderPrice = (val, prefix="$ ") => {
+    if (showPrice) return `${prefix}${val.toLocaleString()}`;
+    return <span className="text-slate-300 font-medium tracking-widest">••••••</span>;
+  };
+  const handleApplyPricing = () => {
+    const effectiveAnnualPrice = Math.round(totalContractValue / sfDuration);
+    setStandardPrice(effectiveAnnualPrice);
+    setCurrentStep('modeling');
+  };
 
   const setupSimResult = useMemo(() => {
     const baseFee = standardPrice * currentModel.baseRate;
@@ -1387,19 +1496,193 @@ const SuccessFeeCalculator = ({ onBack }) => {
               <h1 className="text-2xl font-bold flex items-center gap-2"><BarChart2 size={24} /> 성공보수 분석기</h1>
               <p className="text-purple-200 text-sm mt-1">파트너십 모델 비교 · Z-Score 이격률 분석 · AI 제안서 생성</p>
             </div>
-            <div className="flex gap-2 bg-white/10 p-1 rounded-xl">
-              {['setup', 'analysis'].map(tab => (
-                <button key={tab} onClick={() => setMainTab(tab)}
-                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${mainTab === tab ? 'bg-white text-purple-700 shadow' : 'text-white/70 hover:text-white'}`}>
-                  {tab === 'setup' ? '① 모델 설정' : '② 검증 분석'}
+            <div className="flex gap-1 bg-white/10 p-1 rounded-xl flex-wrap">
+              {[
+                { id: 'quote', label: '① 견적 산출' },
+                { id: 'modeling', label: '② 모델링' },
+                { id: 'verification', label: '③ 검증' },
+              ].map(tab => (
+                <button key={tab.id} onClick={() => setCurrentStep(tab.id)}
+                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${currentStep === tab.id ? 'bg-white text-purple-700 shadow' : 'text-white/70 hover:text-white'}`}>
+                  {tab.label}
                 </button>
               ))}
             </div>
           </div>
         </div>
 
-        {/* TAB 1: SETUP */}
-        {mainTab === 'setup' && (
+        {/* ================= STEP 1: QUOTE ================= */}
+        {currentStep === 'quote' && (
+          <div className="animate-fade-in flex flex-col lg:flex-row gap-6">
+            <div className="lg:w-2/3 space-y-6">
+              {/* 고객 유형 진단 */}
+              <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h2 className="text-sm font-bold text-blue-600 uppercase mb-4 flex items-center gap-2"><span className="bg-blue-100 px-2 py-0.5 rounded text-xs">STEP 1-1</span> 고객사 유형 진단</h2>
+                {!selectedType ? (
+                  <div className="bg-slate-50 rounded-xl p-6 text-center">
+                    <div className="mb-6 min-h-[60px] flex items-center justify-center">
+                      <p className="text-lg font-bold text-slate-800">
+                        {quizStep === 'Q1' && "쿠팡, 이마트, 컬리 등 '리테일(유통) 채널' 입니까?"}
+                        {quizStep === 'Q2' && "직접 제품을 생산하는 '제조 공장'을 보유하고 있습니까?"}
+                        {quizStep === 'Q3_Mfg' && "핵심 원료를 해외에서 '직접 수입' 합니까?"}
+                        {quizStep === 'Q3_Dist' && "해외 브랜드나 원료를 '직접 수입' 합니까?"}
+                        {quizStep === 'Q4_Type' && "주력으로 취급하는 품목의 형태는 무엇입니까?"}
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
+                      {quizStep === 'Q4_Type' ? (
+                        <>
+                          <button onClick={() => handleQuizAnswer('finished')} className="p-4 bg-white border rounded-xl hover:border-blue-500 font-bold shadow-sm">완제품 (Finished Goods)</button>
+                          <button onClick={() => handleQuizAnswer('raw')} className="p-4 bg-white border rounded-xl hover:border-blue-500 font-bold shadow-sm">원료/소재 (Raw Material)</button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => handleQuizAnswer('yes')} className="p-4 bg-white border rounded-xl hover:border-blue-500 text-blue-600 font-bold shadow-sm">네 (Yes)</button>
+                          <button onClick={() => handleQuizAnswer('no')} className="p-4 bg-white border rounded-xl hover:border-slate-400 text-slate-600 font-bold shadow-sm">아니요 (No)</button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="relative bg-blue-50 rounded-xl p-5 border border-blue-100">
+                    <button onClick={resetQuoteAnalysis} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><RefreshCcw size={16}/></button>
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 bg-blue-600 text-white rounded-lg shadow-sm"><Building2 size={24} /></div>
+                      <div>
+                        <h3 className="font-bold text-lg text-slate-900">{CUSTOMER_TYPES[selectedType].title}</h3>
+                        <p className="text-xs text-slate-500">{CUSTOMER_TYPES[selectedType].desc}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </section>
+
+              {/* 달성 목표 선택 */}
+              <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h2 className="text-sm font-bold text-purple-600 uppercase mb-4 flex items-center gap-2"><span className="bg-purple-100 px-2 py-0.5 rounded text-xs">STEP 1-2</span> 달성 목표 선택</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {SF_OBJECTIVES.map(obj => {
+                    const isSelected = selectedObjectives.includes(obj.id);
+                    return (
+                      <div key={obj.id} onClick={() => toggleObjective(obj.id)} className={`cursor-pointer p-3 rounded-xl border-2 transition-all ${isSelected ? 'border-purple-500 bg-purple-50' : 'border-slate-100 bg-white hover:border-purple-200'}`}>
+                        <div className="flex justify-between items-start mb-2">
+                          <div className={`p-1.5 rounded-lg ${isSelected ? 'bg-purple-500 text-white' : 'bg-slate-100 text-slate-400'}`}><CheckCircle2 size={16}/></div>
+                          {isSelected && <CheckCircle2 className="text-purple-500 w-4 h-4"/>}
+                        </div>
+                        <h3 className={`font-bold text-sm ${isSelected ? 'text-purple-900' : 'text-slate-700'}`}>{obj.title}</h3>
+                        <p className="text-xs text-slate-400 mt-1">{obj.desc}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+
+              {/* 추천 솔루션 및 범위 */}
+              <section className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                <h2 className="text-sm font-bold text-green-600 uppercase mb-4 flex items-center gap-2"><span className="bg-green-100 px-2 py-0.5 rounded text-xs">STEP 1-3</span> 추천 솔루션 및 범위</h2>
+                <div className="flex flex-col md:flex-row gap-6">
+                  <div className="flex-1">
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-3">Core Solution</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className={`p-4 rounded-xl border-2 flex flex-col items-center justify-center gap-2 text-center h-28 ${sfSolution.te ? 'border-blue-600 bg-blue-50' : 'border-slate-200 bg-slate-50 opacity-50'}`}>
+                        <Globe size={20} className={sfSolution.te ? "text-blue-600" : "text-slate-400"} />
+                        <p className={`font-bold text-xs ${sfSolution.te ? "text-blue-700" : "text-slate-600"}`}>Transaction Explorer</p>
+                        <span className="text-[10px] text-slate-400">기본 제공</span>
+                      </div>
+                      <div className={`p-4 rounded-xl border-2 flex flex-col items-center justify-center gap-2 text-center h-28 ${sfSolution.eye ? 'border-purple-600 bg-purple-50' : 'border-slate-200 bg-slate-50 opacity-50'}`}>
+                        <Zap size={20} className={sfSolution.eye ? "text-purple-600" : "text-slate-400"} />
+                        <p className={`font-bold text-xs ${sfSolution.eye ? "text-purple-700" : "text-slate-600"}`}>Tridge EYE</p>
+                        <span className={`text-[10px] font-bold ${sfSolution.eye ? "text-purple-600" : "text-slate-400"}`}>Premium</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex-[1.5]">
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-3">Scope</label>
+                    <div className="space-y-2">
+                      {[
+                        { id: 'vertical', label: 'Vertical Lock-in', sub: '3개 제한', cost: '-30% DC' },
+                        { id: 'standard', label: 'Standard Open', sub: '관심 품목 10개', cost: '+$2k' },
+                        { id: 'unlimited', label: 'Unlimited', sub: '전 품목 무제한', cost: '+$5k' }
+                      ].map(opt => (
+                        <div key={opt.id} className={`flex items-center p-3 rounded-xl border-2 ${sfScope === opt.id ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-100 bg-white text-slate-400 opacity-60'}`}>
+                          <div className="flex-1"><span className="font-bold text-sm block">{opt.label}</span><span className="text-xs">{opt.sub}</span></div>
+                          {sfScope === opt.id && <span className="text-[10px] font-bold px-2 py-1 rounded bg-slate-700 text-white">Recommended</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* 사용량 */}
+              <section className="bg-slate-900 text-white p-6 rounded-2xl shadow-lg">
+                <h2 className="text-sm font-bold text-orange-400 uppercase mb-4"><span className="bg-orange-500/20 px-2 py-0.5 rounded text-xs border border-orange-500/30">STEP 1-4</span> 사용량 측정</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div>
+                    <div className="flex justify-between mb-2"><label className="text-sm text-slate-300">Active Users</label><span className="font-bold">{sfUsers} 명</span></div>
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => setSfUsers(Math.max(1, sfUsers-1))} className="w-8 h-8 bg-slate-800 rounded hover:bg-slate-700 font-bold">-</button>
+                      <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden"><div className="h-full bg-blue-500" style={{width: `${Math.min(100, sfUsers*10)}%`}}></div></div>
+                      <button onClick={() => setSfUsers(sfUsers+1)} className="w-8 h-8 bg-slate-800 rounded hover:bg-slate-700 font-bold">+</button>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between mb-2"><label className="text-sm text-slate-300">CSV Quota</label><span className="font-bold text-blue-400">{currentQuotaDisplay.toLocaleString()} rows</span></div>
+                    <input type="range" min="0" max="24" step="1" value={csvSliderValue} onChange={e => setCsvSliderValue(Number(e.target.value))} className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"/>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            {/* 견적 사이드바 */}
+            <div className="lg:w-1/3 bg-white border rounded-2xl p-6 shadow-xl flex flex-col h-fit sticky top-6">
+              <div className="flex justify-between items-center mb-6 border-b pb-4">
+                <h2 className="text-xl font-extrabold text-slate-900 flex items-center gap-2"><FileSpreadsheet className="text-green-600"/> 견적 시뮬레이션</h2>
+              </div>
+              <div className="space-y-3 text-sm flex-1">
+                <div className="flex justify-between"><span className="text-slate-500">기본 플랫폼 (Annual)</span><span className="font-bold">{renderPrice(5000)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Scope ({sfScope})</span><span className="font-bold">{renderPrice(sfScope === 'vertical' ? -1500 : sfScope === 'standard' ? 2000 : 5000, "+ ")}</span></div>
+                {sfSolution.eye && <div className="flex justify-between"><span className="text-purple-600 font-bold">Tridge EYE</span><span className="font-bold text-purple-600">{renderPrice(10000, "+ ")}</span></div>}
+                <div className="pt-2 border-t border-slate-100 mt-2"></div>
+                <div className="flex justify-between"><span className="text-slate-500">Data Quota & Users</span><span className="font-bold">{renderPrice(Math.max(0, annualPrice - 5000 - (sfSolution.eye?10000:0) - (sfScope === 'vertical' ? -1500 : sfScope === 'standard' ? 2000 : 5000)), "+ ")}</span></div>
+              </div>
+
+              {/* 계약 기간 */}
+              <div className="mt-6 pt-4 border-t border-slate-200">
+                <p className="text-xs font-bold text-slate-500 uppercase mb-3">Contract Duration</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {[{ y:1, label:"1 Year", dc:"Standard" }, { y:2, label:"2 Years", dc:"10% Off" }, { y:3, label:"3 Years", dc:"17% Off" }].map(opt => (
+                    <button key={opt.y} onClick={() => { setSfDuration(opt.y); setShowPrice(false); }} className={`flex flex-col items-center py-3 rounded-xl border transition-all ${sfDuration === opt.y ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200'}`}>
+                      <span className="text-sm font-bold">{opt.label}</span>
+                      <span className={`text-[10px] ${sfDuration === opt.y ? 'text-slate-300' : 'text-blue-600 font-bold'}`}>{opt.dc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-6 pt-4 border-t-2 border-slate-900">
+                <div className="flex justify-between items-end mb-2">
+                  <span className="text-slate-500 font-bold text-xs">TOTAL CONTRACT VALUE</span>
+                  <span className="text-3xl font-extrabold text-slate-900">{renderPrice(totalContractValue)}</span>
+                </div>
+                {showPrice ? (
+                  <div className="space-y-3 mt-4">
+                    <button onClick={handleApplyPricing} className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg">
+                      <Settings size={20}/> 이 금액으로 파트너십 모델링 이어서 하기
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => setShowPrice(true)} className="w-full mt-4 bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2">
+                    <Calculator size={20}/> 견적 산출하기
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================= STEP 2: MODELING ================= */}
+        {currentStep === 'modeling' && (
           <div className="animate-fade-in space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               <div className="lg:col-span-5 space-y-6">
@@ -1538,7 +1821,7 @@ const SuccessFeeCalculator = ({ onBack }) => {
                 </div>
 
                 <div className="text-right">
-                  <button onClick={() => setMainTab('analysis')} className="w-full sm:w-auto bg-slate-900 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 ml-auto hover:bg-slate-800 transition-colors">
+                  <button onClick={() => setCurrentStep('verification')} className="w-full sm:w-auto bg-slate-900 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 ml-auto hover:bg-slate-800 transition-colors">
                     최종 파트너십 검증 단계로 이동 <ArrowRight size={18} />
                   </button>
                 </div>
@@ -1548,7 +1831,7 @@ const SuccessFeeCalculator = ({ onBack }) => {
         )}
 
         {/* TAB 2: ANALYSIS */}
-        {mainTab === 'analysis' && (
+        {currentStep === 'verification' && (
           <div className="animate-fade-in space-y-6">
             <div className="bg-white border border-slate-200 rounded-lg p-3 mb-4 flex flex-wrap justify-between items-center shadow-sm gap-2">
               <div className="flex items-center gap-3 text-sm flex-wrap">
@@ -1557,7 +1840,7 @@ const SuccessFeeCalculator = ({ onBack }) => {
                 <span className="text-slate-300 hidden sm:inline">|</span>
                 <span className="whitespace-nowrap">확정 Base: <strong>{fmtUSD(effectiveBaseFee)}</strong></span>
               </div>
-              <button onClick={() => setMainTab('setup')} className="text-xs text-blue-600 font-bold hover:underline whitespace-nowrap">설정 변경하기</button>
+              <button onClick={() => setCurrentStep('modeling')} className="text-xs text-blue-600 font-bold hover:underline whitespace-nowrap">설정 변경하기</button>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
